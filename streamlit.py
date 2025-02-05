@@ -41,7 +41,22 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # -------------------------
-# ForecastDataRetriever Class
+# Custom Header with FIS Logo and Application Name
+# -------------------------
+header_html = """
+<div style="border: 2px solid #4CAF50; padding: 10px; display: flex; align-items: center; justify-content: space-between;">
+    <div>
+        <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/FIS_Global_logo.svg" alt="FIS Global Logo" style="height:60px;">
+    </div>
+    <div>
+        <h1 style="margin: 0; color: #4CAF50;">Forecast Viewer Intergrity Saas</h1>
+    </div>
+</div>
+"""
+st.markdown(header_html, unsafe_allow_html=True)
+
+# -------------------------
+# ForecastDataRetriever Class (Using Databricks SQL Connector)
 # -------------------------
 class ForecastDataRetriever:
     def __init__(self):
@@ -54,7 +69,6 @@ class ForecastDataRetriever:
             http_path = "your-http-path"
             access_token = "your-access-token"
             table_name = "your_database.your_table"   # Optional; default is "forecast_data"
-
         """
         self.conn = dbsql.connect(
             server_hostname=st.secrets["databricks"]["server_hostname"],
@@ -146,8 +160,6 @@ class ForecastDataRetriever:
 # -------------------------
 # Main Streamlit Application UI
 # -------------------------
-st.title("FOrecast Viewer for Integrity SAAS")
-
 # Instantiate the data retriever.
 data_retriever = ForecastDataRetriever()
 
