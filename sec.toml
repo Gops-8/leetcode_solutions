@@ -1,0 +1,5 @@
+[databricks]
+server_hostname = "your-databricks-hostname"
+http_path = "your-http-path"
+access_token = "your-access-token"
+table_name = "your_database.your_table"  # Optional; default is "forecast_data"
