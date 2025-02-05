@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, date
+import databricks.sql as dbsql  # Ensure you have installed: pip install databricks-sql-connector
 
 # -------------------------
 # Page Configuration and Custom CSS
@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Hide default Streamlit elements and the deploy button
+# Hide default Streamlit elements (menu, footer, sidebar, deploy button)
 hide_elements_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -41,104 +41,114 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # -------------------------
-# Data Retrieval Class
+# ForecastDataRetriever Class
 # -------------------------
 class ForecastDataRetriever:
     def __init__(self):
         """
-        Simulate loading data from a Databricks table.
-        The simulated table has the following columns:
-          - TenentID
-          - ValueDate
-          - CashPoolDescription
-          - WorkSheetCatagoryDescription
-          - ForecastedClosingBalance
-        """
-        self.data = self._simulate_data()
-    
-    def _simulate_data(self):
-        # Simulate data for two clients: "CVS" and "Aegon"
-        clients = {
-            "CVS": {
-                "cashpools": ["CVS Group A", "CVS Group B", "CVS Group C"],
-                "start_date": date.today() - timedelta(days=30)
-            },
-            "Aegon": {
-                "cashpools": ["Aegon Group X", "Aegon Group Y"],
-                "start_date": date.today() - timedelta(days=40)
-            }
-        }
-        
-        records = []
-        # Create 50 days of data for each client and for each cashpool group.
-        for client, info in clients.items():
-            start_date = info["start_date"]
-            cashpools = info["cashpools"]
-            for day in range(50):
-                current_date = start_date + timedelta(days=day)
-                for cp in cashpools:
-                    record = {
-                        "TenentID": client,
-                        "ValueDate": current_date,
-                        "CashPoolDescription": cp,
-                        "WorkSheetCatagoryDescription": np.random.choice(["Category 1", "Category 2", "Category 3"]),
-                        "ForecastedClosingBalance": round(np.random.uniform(1000, 5000), 2)
-                    }
-                    records.append(record)
-        df = pd.DataFrame(records)
-        return df
+        Establish a connection to the Databricks Delta table (Hive metastore)
+        using credentials provided in st.secrets. The st.secrets file should include:
 
-    def get_unique_clients(self):
-        """Return unique TenentIDs (client names) from the simulated data."""
-        return self.data["TenentID"].unique().tolist()
+            [databricks]
+            server_hostname = "your-databricks-hostname"
+            http_path = "your-http-path"
+            access_token = "your-access-token"
+            table_name = "your_database.your_table"   # Optional; default is "forecast_data"
+
+        """
+        self.conn = dbsql.connect(
+            server_hostname=st.secrets["databricks"]["server_hostname"],
+            http_path=st.secrets["databricks"]["http_path"],
+            access_token=st.secrets["databricks"]["access_token"]
+        )
+        self.table_name = st.secrets["databricks"].get("table_name", "forecast_data")
     
-    def get_start_date_and_cashpool_groups(self, client):
+    def _query_to_df(self, query: str) -> pd.DataFrame:
         """
-        For a given client, return:
-          - The earliest (minimum) ValueDate as the start date.
-          - The unique CashPoolDescription values as the available cashpool groups.
+        Helper method to execute a SQL query and return the results as a DataFrame.
         """
-        client_data = self.data[self.data["TenentID"] == client]
-        if client_data.empty:
+        with self.conn.cursor() as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            col_names = [desc[0] for desc in cursor.description]
+        return pd.DataFrame(rows, columns=col_names)
+    
+    def get_unique_clients(self) -> list:
+        """
+        Pull distinct client names from the TenentID column.
+        """
+        query = f"SELECT DISTINCT TenentID FROM {self.table_name}"
+        df = self._query_to_df(query)
+        return df["TenentID"].tolist()
+    
+    def get_start_date_and_cashpool_groups(self, client: str):
+        """
+        For the given client, return:
+          - The earliest ValueDate (start date).
+          - The unique CashPoolDescription values (cashpool groups).
+        """
+        # Query for the earliest date for the selected client.
+        query_date = f"""
+            SELECT MIN(ValueDate) AS start_date
+            FROM {self.table_name}
+            WHERE TenentID = '{client}'
+        """
+        df_date = self._query_to_df(query_date)
+        if df_date.empty or pd.isnull(df_date.iloc[0]["start_date"]):
             return None, []
-        start_date = client_data["ValueDate"].min()
-        cashpool_groups = client_data["CashPoolDescription"].unique().tolist()
+        start_date = df_date.iloc[0]["start_date"]
+        # Convert to a date object if necessary.
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        elif isinstance(start_date, pd.Timestamp):
+            start_date = start_date.date()
+        
+        # Query for unique cashpool groups for the client.
+        query_cashpools = f"""
+            SELECT DISTINCT CashPoolDescription
+            FROM {self.table_name}
+            WHERE TenentID = '{client}'
+        """
+        df_cashpools = self._query_to_df(query_cashpools)
+        cashpool_groups = df_cashpools["CashPoolDescription"].tolist()
         return start_date, cashpool_groups
     
-    def get_forecast_data(self, client, selected_cashpools, no_of_days):
+    def get_forecast_data(self, client: str, selected_cashpools: list, no_of_days: int):
         """
-        Given a client, selected cashpool groups, and a number of days:
-          1. Find the start date (the minimum ValueDate for that client).
-          2. Calculate the end date as: start_date + no_of_days.
-          3. Filter the data for rows that match the client, fall within the start and end dates,
-             and (if specified) belong to the selected cashpool groups.
-        Returns the filtered DataFrame along with the start and end dates.
+        Based on the selected client, cashpool groups, and number of days:
+          - Compute the end date (start_date + no_of_days).
+          - Pull rows that match the filters.
         """
         start_date, _ = self.get_start_date_and_cashpool_groups(client)
         if start_date is None:
             return pd.DataFrame(), None, None
         
         end_date = start_date + timedelta(days=no_of_days)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
         
-        # Filter data by client and date range
-        df_filtered = self.data[
-            (self.data["TenentID"] == client) &
-            (self.data["ValueDate"] >= start_date) &
-            (self.data["ValueDate"] <= end_date)
-        ]
-        
-        # Further filter by cashpool groups if provided
+        # Build the SQL query
+        query = f"""
+            SELECT *
+            FROM {self.table_name}
+            WHERE TenentID = '{client}'
+              AND ValueDate >= '{start_date_str}'
+              AND ValueDate <= '{end_date_str}'
+        """
         if selected_cashpools:
-            df_filtered = df_filtered[df_filtered["CashPoolDescription"].isin(selected_cashpools)]
+            # Create a comma-separated list for the IN clause.
+            groups_str = ",".join(f"'{grp}'" for grp in selected_cashpools)
+            query += f" AND CashPoolDescription IN ({groups_str})"
         
-        return df_filtered.reset_index(drop=True), start_date, end_date
+        df = self._query_to_df(query)
+        return df, start_date, end_date
 
 # -------------------------
-# Streamlit UI
+# Main Streamlit Application UI
 # -------------------------
 st.title("FOrecast Viewer for Integrity SAAS")
 
-# Instantiate the data retriever
+# Instantiate the data retriever.
 data_retriever = ForecastDataRetriever()
 
 # --- Top Row: Client Selection and Future Timespan ---
@@ -148,7 +158,6 @@ with col1:
     client = st.selectbox("Select Client", options=unique_clients)
 
 with col2:
-    # For the selected client, retrieve the start date and cashpool groups.
     start_date, available_cashpools = data_retriever.get_start_date_and_cashpool_groups(client)
     if start_date:
         st.write(f"**Start Date:** {start_date}")
@@ -161,13 +170,15 @@ with col3:
 # --- Second Row: Cashpool Group Selection ---
 col4, col5 = st.columns(2)
 with col4:
-    # Let the user choose one or more cashpool groups.
-    # By default, all available groups are selected.
-    selected_cashpools = st.multiselect("Select CashPool Groups", options=available_cashpools, default=available_cashpools)
+    selected_cashpools = st.multiselect(
+        "Select CashPool Groups",
+        options=available_cashpools,
+        default=available_cashpools
+    )
 with col5:
-    st.empty()  # Reserved for any additional inputs if needed
+    st.empty()  # Additional inputs can be added here if needed.
 
-# --- Forecast Data Retrieval ---
+# --- Forecast Data Retrieval and Display ---
 if st.button("Show Forecast"):
     forecast_df, start_date, end_date = data_retriever.get_forecast_data(client, selected_cashpools, no_of_days)
     
@@ -175,13 +186,13 @@ if st.button("Show Forecast"):
         st.warning("No data found for the selected filters.")
     else:
         st.subheader("Forecast Results (Transposed)")
-        # Display the DataFrame in transposed format.
+        # Transpose the DataFrame before displaying.
         st.dataframe(forecast_df.T)
         
         st.subheader("Forecast Plot")
-        # For plotting, aggregate (sum) the ForecastedClosingBalance per ValueDate.
+        # Aggregate the forecasted amounts per date.
         plot_data = forecast_df.groupby("ValueDate")["ForecastedClosingBalance"].sum().reset_index()
         plot_data = plot_data.sort_values("ValueDate")
-        # Set the date as index for the line chart.
+        # Set ValueDate as index for a proper line chart.
         plot_data = plot_data.set_index("ValueDate")
         st.line_chart(plot_data)
