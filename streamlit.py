@@ -47,14 +47,7 @@ class ForecastDataRetriever:
     def __init__(self):
         """
         Establish a connection to the Databricks Delta table (Hive metastore)
-        using credentials provided in st.secrets. The st.secrets file should include:
-
-            [databricks]
-            server_hostname = "your-databricks-hostname"
-            http_path = "your-http-path"
-            access_token = "your-access-token"
-            table_name = "your_database.your_table"   # Optional; default is "forecast_data"
-
+        using credentials provided in st.secrets.
         """
         self.conn = dbsql.connect(
             server_hostname=st.secrets["databricks"]["server_hostname"],
@@ -151,6 +144,10 @@ with col1:
     unique_clients = data_retriever.get_unique_clients()
     client = st.selectbox("Select Client", options=unique_clients)
 
+# Initialize date range variables
+start_date_selected = None
+end_date_selected = None
+
 with col2:
     start_date, available_cashpools = data_retriever.get_start_date_and_cashpool_groups(client)
     if start_date:
@@ -164,7 +161,7 @@ with col2:
         if len(date_range) == 2:
             start_date_selected, end_date_selected = date_range
         else:
-            st.error("Please select a valid date range.")
+            st.error("Please select a valid date range (start and end dates).")
     else:
         st.write("No data available for the selected client.")
 
@@ -184,7 +181,11 @@ with col5:
 
 # --- Forecast Data Retrieval and Display ---
 if st.button("Show Forecast"):
-    if 'start_date_selected' in locals() and 'end_date_selected' in locals():
+    if not selected_cashpools:
+        st.error("Please select at least one CashPool Group.")
+    elif start_date_selected is None or end_date_selected is None:
+        st.error("Please select a valid date range.")
+    else:
         forecast_df = data_retriever.get_forecast_data(client, selected_cashpools, start_date_selected, end_date_selected)
         
         if forecast_df.empty:
@@ -201,5 +202,3 @@ if st.button("Show Forecast"):
             # Set ValueDate as index for a proper line chart.
             plot_data = plot_data.set_index("ValueDate")
             st.line_chart(plot_data)
-    else:
-        st.error("Please select a valid date range.")
