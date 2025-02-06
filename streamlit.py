@@ -138,35 +138,42 @@ st.title("Forecast Viewer for Integrity SAAS")
 # Instantiate the data retriever.
 data_retriever = ForecastDataRetriever()
 
-# --- Top Row: Client Selection and Date Range ---
+# --- Top Row: Client Selection and Date Input ---
 col1, col2, col3 = st.columns(3)
 with col1:
     unique_clients = data_retriever.get_unique_clients()
     client = st.selectbox("Select Client", options=unique_clients)
 
-# Initialize date range variables
-start_date_selected = None
-end_date_selected = None
+# Initialize variables
+start_date, available_cashpools = data_retriever.get_start_date_and_cashpool_groups(client)
+selected_date = None
+future_timespan = None
+end_date = None
 
 with col2:
-    start_date, available_cashpools = data_retriever.get_start_date_and_cashpool_groups(client)
     if start_date:
-        # Calendar input for date range selection
-        date_range = st.date_input(
-            "Select Date Range",
-            value=(start_date, date.today()),
+        # Calendar input for selecting a date
+        selected_date = st.date_input(
+            "Select Start Date",
+            value=start_date,
             min_value=start_date,
             max_value=date.today()
         )
-        if len(date_range) == 2:
-            start_date_selected, end_date_selected = date_range
-        else:
-            st.error("Please select a valid date range (start and end dates).")
     else:
         st.write("No data available for the selected client.")
 
 with col3:
-    st.empty()  # Additional inputs can be added here if needed.
+    if start_date:
+        # Slider for future timespan input
+        future_timespan = st.slider(
+            "Future Timespan (Days)",
+            min_value=3,
+            max_value=15,
+            value=5
+        )
+        # Calculate end date
+        if selected_date:
+            end_date = selected_date + timedelta(days=future_timespan)
 
 # --- Second Row: Cashpool Group Selection ---
 col4, col5 = st.columns(2)
@@ -177,16 +184,17 @@ with col4:
         default=available_cashpools
     )
 with col5:
-    st.empty()  # Additional inputs can be added here if needed.
+    # Display the forecast field (Closing Balance)
+    st.write("**Forecast Field:** Closing Balance")
 
 # --- Forecast Data Retrieval and Display ---
 if st.button("Show Forecast"):
     if not selected_cashpools:
         st.error("Please select at least one CashPool Group.")
-    elif start_date_selected is None or end_date_selected is None:
-        st.error("Please select a valid date range.")
+    elif selected_date is None or end_date is None:
+        st.error("Please select a valid start date and future timespan.")
     else:
-        forecast_df = data_retriever.get_forecast_data(client, selected_cashpools, start_date_selected, end_date_selected)
+        forecast_df = data_retriever.get_forecast_data(client, selected_cashpools, selected_date, end_date)
         
         if forecast_df.empty:
             st.warning("No data found for the selected filters.")
