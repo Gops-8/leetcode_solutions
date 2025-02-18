@@ -27,3 +27,54 @@ class DatabricksClient:
         response = requests.post(url, json=payload, headers=self.headers)
         response.raise_for_status()
         return response.json()
+## main.py
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from databricks_client import DatabricksClient
+
+app = FastAPI()
+
+# Define your request schema (example)
+class DataRequest(BaseModel):
+    query: str  # Adjust or add additional fields as needed
+
+# Define your response schema (example)
+class DataResponse(BaseModel):
+    data: dict
+
+# Instantiate the Databricks client
+client = DatabricksClient()
+
+@app.post("/endpoint1", response_model=DataResponse)
+async def endpoint1(request: DataRequest):
+    try:
+        # Adjust the Databricks API endpoint as necessary
+        result = client.fetch_data("/api/endpoint1", request.dict())
+        return DataResponse(data=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/endpoint2", response_model=DataResponse)
+async def endpoint2(request: DataRequest):
+    try:
+        result = client.fetch_data("/api/endpoint2", request.dict())
+        return DataResponse(data=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/endpoint3", response_model=DataResponse)
+async def endpoint3(request: DataRequest):
+    try:
+        result = client.fetch_data("/api/endpoint3", request.dict())
+        return DataResponse(data=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/endpoint4", response_model=DataResponse)
+async def endpoint4(request: DataRequest):
+    try:
+        result = client.fetch_data("/api/endpoint4", request.dict())
+        return DataResponse(data=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
