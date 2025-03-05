@@ -1,0 +1,216 @@
+openapi: 3.0.0
+info:
+  title: Cashpool Forecasting API
+  description: API for short-term, mid-term, and full-data cash forecasting
+  version: "1.0.0"
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API.
+      responses:
+        '200':
+          description: Health check successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '500':
+          description: Internal server error
+
+  /forecast/short-term:
+    post:
+      summary: Short-term forecast
+      description: Returns short-term forecast data (e.g., up to 5 days).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForecastRequest'
+      responses:
+        '200':
+          description: Successful short-term forecast response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ForecastedCashpoolData'
+                  - $ref: '#/components/schemas/ForecastedCategoryData'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+  /forecast/mid-term:
+    post:
+      summary: Mid-term forecast
+      description: Returns mid-term forecast data (e.g., 5–90 days).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForecastRequest'
+      responses:
+        '200':
+          description: Successful mid-term forecast response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ForecastedCashpoolData'
+                  - $ref: '#/components/schemas/ForecastedCategoryData'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+  /forecast/full_data_for_graph:
+    post:
+      summary: Full data for graph
+      description: Returns combined cashpool and category data based on tenant and cashpool.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FullDataRequest'
+      responses:
+        '200':
+          description: Combined data for graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastedFullData'
+        '400':
+          description: Bad request
+        '500':
+          description: Internal server error
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      description: Basic health check response
+      properties:
+        status:
+          type: string
+          description: Health status of the API
+        version:
+          type: string
+          description: Current version of the API
+
+    ForecastRequest:
+      type: object
+      description: Forecast request parameters
+      required:
+        - TenantID
+        - Cashpool
+        - Start_date
+        - time_horizon
+        - category
+      properties:
+        TenantID:
+          type: string
+          description: Unique identifier for the tenant
+        Cashpool:
+          type: string
+          description: Name or identifier of the cash pool
+        Start_date:
+          type: string
+          format: date
+          description: Starting date for the forecast
+        time_horizon:
+          type: integer
+          description: Number of days to forecast
+        category:
+          type: boolean
+          description: Whether to include category-level forecast details
+
+    ForecastedCashpoolData:
+      type: object
+      description: Forecast result at the cashpool level
+      properties:
+        TenantId:
+          type: string
+          description: Tenant identifier
+        Cashpool:
+          type: string
+          description: Cash pool identifier
+        Date:
+          type: string
+          format: date
+          description: Forecast date
+        ActualClosingBalance:
+          type: number
+          format: float
+          description: Actual closing balance on the forecast date
+        ForecastedClosingBalance:
+          type: number
+          format: float
+          description: Predicted closing balance
+        ForecastedLowerClosingBalance:
+          type: number
+          format: float
+          description: Lower bound of predicted closing balance
+        ForecastedUpperClosingBalance:
+          type: number
+          format: float
+          description: Upper bound of predicted closing balance
+
+    ForecastedCategoryData:
+      type: object
+      description: Forecast result at the category level
+      properties:
+        TenantId:
+          type: string
+          description: Tenant identifier
+        Cashpool:
+          type: string
+          description: Cash pool identifier
+        Date:
+          type: string
+          format: date
+          description: Forecast date
+        WorksheetCategory:
+          type: string
+          description: Category name/identifier
+        ForecastedCategoryTransactionAmount:
+          type: number
+          format: float
+          description: Forecasted transaction amount for the category
+        ForecastedOpeningBalance:
+          type: number
+          format: float
+          description: Forecasted opening balance before category transactions
+
+    FullDataRequest:
+      type: object
+      description: Request parameters for combined data
+      required:
+        - TenantID
+        - Cashpool
+      properties:
+        TenantID:
+          type: string
+          description: Unique identifier for the tenant
+        Cashpool:
+          type: string
+          description: Name or identifier of the cash pool
+
+    ForecastedFullData:
+      type: object
+      description: Combined cashpool and category data for graphing
+      properties:
+        cashpoolData:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForecastedCashpoolData'
+          description: Array of cashpool forecast data
+        categoryData:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForecastedCategoryData'
+          description: Array of category-level forecast data
